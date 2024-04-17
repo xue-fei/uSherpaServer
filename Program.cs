@@ -1,5 +1,5 @@
 ﻿// See https://aka.ms/new-console-template for more information
-using System;
+using Fleck;
 
 namespace uSherpaServer
 {
@@ -16,19 +16,20 @@ namespace uSherpaServer
         static string decoderBinPath = "decoder_jit_trace-pnnx.ncnn.bin";
         static string joinerParamPath = "joiner_jit_trace-pnnx.ncnn.param";
         static string joinerBinPath = "joiner_jit_trace-pnnx.ncnn.bin";
-        static int numThreads = 2;
+        static int numThreads = 1;
         static string decodingMethod = "greedy_search";
 
         static string modelPath;
+        static float sampleRate = 16000;
 
         static void Main(string[] args)
         {
-            Console.WriteLine("Hello World!");
+            //需要将此文件夹拷贝到exe所在的目录
             modelPath = Environment.CurrentDirectory + "/sherpa-ncnn-streaming-zipformer-small-bilingual-zh-en-2023-02-16";
             // 初始化配置
             SherpaNcnn.OnlineRecognizerConfig config = new SherpaNcnn.OnlineRecognizerConfig
             {
-                FeatConfig = { SampleRate = 16000, FeatureDim = 80 },
+                FeatConfig = { SampleRate = sampleRate, FeatureDim = 80 },
                 ModelConfig = {
                 Tokens = Path.Combine(modelPath,tokensPath),
                 EncoderParam =  Path.Combine(modelPath,encoderParamPath),
@@ -54,6 +55,77 @@ namespace uSherpaServer
             recognizer = new SherpaNcnn.OnlineRecognizer(config);
 
             onlineStream = recognizer.CreateStream();
+
+            StartWebServer();
+            Update();
+            Console.ReadLine();
+        }
+
+        static void StartWebServer()
+        {
+            //存储连接对象的池
+            var connectSocketPool = new List<IWebSocketConnection>();
+            //创建WebSocket服务端实例并监听本机的9999端口
+            var server = new WebSocketServer("ws://127.0.0.1:9999");
+            //开启监听
+            server.Start(socket =>
+            {
+                //注册客户端连接建立事件
+                socket.OnOpen = () =>
+                {
+                    Console.WriteLine("Open");
+                    //将当前客户端连接对象放入连接池中
+                    connectSocketPool.Add(socket);
+                };
+                //注册客户端连接关闭事件
+                socket.OnClose = () =>
+                {
+                    Console.WriteLine("Close");
+                    //将当前客户端连接对象从连接池中移除
+                    connectSocketPool.Remove(socket);
+                };
+                //注册客户端发送信息事件
+                socket.OnBinary = message =>
+                { 
+                    float[] floatArray = new float[message.Length / 4];
+                    Buffer.BlockCopy(message, 0, floatArray, 0, message.Length);
+                    // 将采集到的音频数据传递给识别器
+                    onlineStream.AcceptWaveform(sampleRate, floatArray);
+                };
+            });
+        }
+
+        static string lastText = "";
+
+        static void Update()
+        {
+            while (true)
+            {
+                // 每帧更新识别器状态
+                if (recognizer.IsReady(onlineStream))
+                {
+                    recognizer.Decode(onlineStream);
+                }
+
+                var text = recognizer.GetResult(onlineStream).Text;
+                bool isEndpoint = recognizer.IsEndpoint(onlineStream);
+                if (!string.IsNullOrWhiteSpace(text) && lastText != text)
+                {
+                    lastText = text;
+                    Console.WriteLine("text:" + text);
+                }
+
+                if (isEndpoint)
+                {
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        Console.WriteLine("text:" + text);
+                    }
+                    recognizer.Reset(onlineStream);
+                    //Console.WriteLine("Reset");
+                }
+                Thread.Sleep(200); // ms
+            }
         }
     }
 }
