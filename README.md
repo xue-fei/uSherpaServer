@@ -1,0 +1,2 @@
+# uSherpaServer
+uSherpaServer 给Unity提供流式语音识别的websocket服务
