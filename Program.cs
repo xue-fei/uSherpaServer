@@ -1,5 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using Fleck;
+using System.Text;
 
 namespace uSherpaServer
 {
@@ -22,6 +23,7 @@ namespace uSherpaServer
         static string modelPath;
         static float sampleRate = 16000;
 
+        static IWebSocketConnection client;
         static void Main(string[] args)
         {
             //需要将此文件夹拷贝到exe所在的目录
@@ -73,6 +75,7 @@ namespace uSherpaServer
                 //注册客户端连接建立事件
                 socket.OnOpen = () =>
                 {
+                    client = socket;
                     Console.WriteLine("Open");
                     //将当前客户端连接对象放入连接池中
                     connectSocketPool.Add(socket);
@@ -80,13 +83,14 @@ namespace uSherpaServer
                 //注册客户端连接关闭事件
                 socket.OnClose = () =>
                 {
+                    client = null;
                     Console.WriteLine("Close");
                     //将当前客户端连接对象从连接池中移除
                     connectSocketPool.Remove(socket);
                 };
                 //注册客户端发送信息事件
                 socket.OnBinary = message =>
-                { 
+                {
                     float[] floatArray = new float[message.Length / 4];
                     Buffer.BlockCopy(message, 0, floatArray, 0, message.Length);
                     // 将采集到的音频数据传递给识别器
@@ -111,15 +115,34 @@ namespace uSherpaServer
                 bool isEndpoint = recognizer.IsEndpoint(onlineStream);
                 if (!string.IsNullOrWhiteSpace(text) && lastText != text)
                 {
-                    lastText = text;
-                    Console.WriteLine("text:" + text);
+                    if (string.IsNullOrWhiteSpace(lastText))
+                    {
+                        lastText = text;
+                        if (client != null)
+                        {
+                            client.Send(Encoding.UTF8.GetBytes(text));
+                            //Console.WriteLine("text1:" + text);
+                        }
+                    }
+                    else
+                    {
+                        if (client != null)
+                        {
+                            client.Send(Encoding.UTF8.GetBytes(text.Replace(lastText, "")));
+                            lastText = text;
+                        }
+                    }
                 }
 
                 if (isEndpoint)
                 {
                     if (!string.IsNullOrWhiteSpace(text))
                     {
-                        Console.WriteLine("text:" + text);
+                        if (client != null)
+                        {
+                            client.Send(Encoding.UTF8.GetBytes("。"));
+                        }
+                       // Console.WriteLine("text2:" + text);
                     }
                     recognizer.Reset(onlineStream);
                     //Console.WriteLine("Reset");
