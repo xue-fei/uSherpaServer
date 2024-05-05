@@ -24,6 +24,9 @@ namespace uSherpaServer
         static float sampleRate = 16000;
 
         static IWebSocketConnection client;
+
+        static SherpaOnnx.OfflinePunctuation offlinePunctuation = null;
+
         static void Main(string[] args)
         {
             //需要将此文件夹拷贝到exe所在的目录
@@ -57,6 +60,13 @@ namespace uSherpaServer
             recognizer = new SherpaNcnn.OnlineRecognizer(config);
 
             onlineStream = recognizer.CreateStream();
+
+            SherpaOnnx.SherpaOnnxOfflinePunctuationConfig soopc = new SherpaOnnx.SherpaOnnxOfflinePunctuationConfig();
+            SherpaOnnx.SherpaOnnxOfflinePunctuationModelConfig soopmc =
+                new SherpaOnnx.SherpaOnnxOfflinePunctuationModelConfig
+                (Environment.CurrentDirectory + "/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx", 1, false, "cpu");
+            soopc.model = soopmc;
+            offlinePunctuation = new SherpaOnnx.OfflinePunctuation(soopc);
 
             StartWebServer();
             Update();
@@ -142,7 +152,7 @@ namespace uSherpaServer
                         {
                             client.Send(Encoding.UTF8.GetBytes("。"));
                         }
-                       // Console.WriteLine("text2:" + text);
+                        Console.WriteLine(offlinePunctuation.AddPunctuation(text));
                     }
                     recognizer.Reset(onlineStream);
                     //Console.WriteLine("Reset");
