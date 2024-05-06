@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Fleck" Version="1.2.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="org.k2fsa.sherpa.ncnn" Version="2.1.6" />
     <PackageReference Include="org.k2fsa.sherpa.onnx" Version="1.9.23" />
   </ItemGroup>

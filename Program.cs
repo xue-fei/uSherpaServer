@@ -1,5 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using Fleck;
+using Newtonsoft.Json;
 using System.Text;
 
 namespace uSherpaServer
@@ -130,7 +131,10 @@ namespace uSherpaServer
                         lastText = text;
                         if (client != null)
                         {
-                            client.Send(Encoding.UTF8.GetBytes(text));
+                            TextMsg textMsg = new TextMsg();
+                            textMsg.isEndpoint = false;
+                            textMsg.message = text;  
+                            client.Send(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(textMsg)));
                             //Console.WriteLine("text1:" + text);
                         }
                     }
@@ -138,7 +142,11 @@ namespace uSherpaServer
                     {
                         if (client != null)
                         {
-                            client.Send(Encoding.UTF8.GetBytes(text.Replace(lastText, "")));
+                            //client.Send(Encoding.UTF8.GetBytes(text.Replace(lastText, "")));
+                            TextMsg textMsg = new TextMsg();
+                            textMsg.isEndpoint = false;
+                            textMsg.message = text.Replace(lastText, "");
+                            client.Send(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(textMsg)));
                             lastText = text;
                         }
                     }
@@ -150,9 +158,13 @@ namespace uSherpaServer
                     {
                         if (client != null)
                         {
-                            client.Send(Encoding.UTF8.GetBytes("。"));
+                            //client.Send(Encoding.UTF8.GetBytes("。"));
+                            TextMsg textMsg = new TextMsg();
+                            textMsg.isEndpoint = true;
+                            textMsg.message = offlinePunctuation.AddPunctuation(text);
+                            client.Send(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(textMsg)));
                         }
-                        Console.WriteLine(offlinePunctuation.AddPunctuation(text));
+                        //Console.WriteLine(offlinePunctuation.AddPunctuation(text));
                     }
                     recognizer.Reset(onlineStream);
                     //Console.WriteLine("Reset");
