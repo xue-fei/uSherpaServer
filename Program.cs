@@ -1,5 +1,4 @@
-﻿// See https://aka.ms/new-console-template for more information
-using Fleck;
+﻿using Fleck;
 using Newtonsoft.Json;
 using System.Text;
 
@@ -75,11 +74,15 @@ namespace uSherpaServer
         }
 
         static void StartWebServer()
-        {
+        { 
             //存储连接对象的池
             var connectSocketPool = new List<IWebSocketConnection>();
             //创建WebSocket服务端实例并监听本机的9999端口
-            var server = new WebSocketServer("ws://127.0.0.1:9999");
+            var server = new WebSocketServer("wss://172.32.151.240:9999"); 
+            server.Certificate =
+                new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                    Environment.CurrentDirectory + "/usherpa.xuefei.net.cn.pfx", "xb5ceehg");
+            server.EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12;
             //开启监听
             server.Start(socket =>
             {
@@ -109,7 +112,7 @@ namespace uSherpaServer
                 };
             });
         }
-
+          
         static string lastText = "";
 
         static void Update()
