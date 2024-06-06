@@ -136,7 +136,7 @@ namespace uSherpaServer
                         {
                             TextMsg textMsg = new TextMsg();
                             textMsg.isEndpoint = false;
-                            textMsg.message = text;  
+                            textMsg.message = text.ToLower();  
                             client.Send(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(textMsg)));
                             //Console.WriteLine("text1:" + text);
                         }
@@ -148,7 +148,7 @@ namespace uSherpaServer
                             //client.Send(Encoding.UTF8.GetBytes(text.Replace(lastText, "")));
                             TextMsg textMsg = new TextMsg();
                             textMsg.isEndpoint = false;
-                            textMsg.message = text.Replace(lastText, "");
+                            textMsg.message = text.Replace(lastText, "").ToLower();
                             client.Send(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(textMsg)));
                             lastText = text;
                         }
@@ -164,7 +164,7 @@ namespace uSherpaServer
                             //client.Send(Encoding.UTF8.GetBytes("。"));
                             TextMsg textMsg = new TextMsg();
                             textMsg.isEndpoint = true;
-                            textMsg.message = offlinePunctuation.AddPunctuation(text);
+                            textMsg.message = offlinePunctuation.AddPunctuation(text.ToLower());
                             client.Send(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(textMsg)));
                         }
                         //Console.WriteLine(offlinePunctuation.AddPunctuation(text));
