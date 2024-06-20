@@ -1,5 +1,6 @@
 ﻿using Fleck;
 using Newtonsoft.Json;
+using SherpaOnnx;
 using System.Text;
 
 namespace uSherpaServer
@@ -26,6 +27,7 @@ namespace uSherpaServer
         static IWebSocketConnection client;
 
         static SherpaOnnx.OfflinePunctuation offlinePunctuation = null;
+        static SherpaOnnx.VoiceActivityDetector vad = null;
 
         static void Main(string[] args)
         {
@@ -68,17 +70,22 @@ namespace uSherpaServer
             soopc.model = soopmc;
             offlinePunctuation = new SherpaOnnx.OfflinePunctuation(soopc);
 
+            VadModelConfig vadModelConfig = new VadModelConfig();
+            vadModelConfig.SileroVad.Model = Environment.CurrentDirectory + "/silero_vad.onnx";
+            vadModelConfig.Debug = 0;
+            vad = new VoiceActivityDetector(vadModelConfig, 60);
+
             StartWebServer();
             Update();
             Console.ReadLine();
         }
 
         static void StartWebServer()
-        { 
+        {
             //存储连接对象的池
             var connectSocketPool = new List<IWebSocketConnection>();
             //创建WebSocket服务端实例并监听本机的9999端口
-            var server = new WebSocketServer("wss://172.32.151.240:9999"); 
+            var server = new WebSocketServer("wss://172.32.151.240:9999");
             server.Certificate =
                 new System.Security.Cryptography.X509Certificates.X509Certificate2(
                     Environment.CurrentDirectory + "/usherpa.xuefei.net.cn.pfx", "xb5ceehg");
@@ -107,12 +114,32 @@ namespace uSherpaServer
                 {
                     float[] floatArray = new float[message.Length / 4];
                     Buffer.BlockCopy(message, 0, floatArray, 0, message.Length);
-                    // 将采集到的音频数据传递给识别器
-                    onlineStream.AcceptWaveform(sampleRate, floatArray);
+
+                    vad.AcceptWaveform(floatArray);
+                    if (vad.IsSpeechDetected())
+                    {
+                        //Console.Write(" 有人讲话 ");
+
+                        if (!vad.IsEmpty())
+                        {
+                            SpeechSegment segment = vad.Front();
+                            float startTime = segment.Start / (float)sampleRate;
+                            float duration = segment.Samples.Length / (float)sampleRate;
+
+                            //Console.Write(" " + startTime + "");
+                            //Console.Write(" " + duration + "");
+                            // 将采集到的音频数据传递给识别器
+                            onlineStream.AcceptWaveform(sampleRate, floatArray);
+                        }
+                    }
+                    else
+                    {
+                        //Console.Write(" 无人语我 ");
+                    }
                 };
             });
         }
-          
+
         static string lastText = "";
 
         static void Update()
@@ -136,7 +163,7 @@ namespace uSherpaServer
                         {
                             TextMsg textMsg = new TextMsg();
                             textMsg.isEndpoint = false;
-                            textMsg.message = text.ToLower();  
+                            textMsg.message = text.ToLower();
                             client.Send(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(textMsg)));
                             //Console.WriteLine("text1:" + text);
                         }
