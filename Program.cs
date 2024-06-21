@@ -8,72 +8,75 @@ namespace uSherpaServer
     internal class Program
     {
         // 声明配置和识别器变量
-        static SherpaNcnn.OnlineRecognizer recognizer;
-        static SherpaNcnn.OnlineStream onlineStream;
+        static OnlineRecognizer recognizer = null;
+        static OnlineStream onlineStream = null;
 
         static string tokensPath = "tokens.txt";
-        static string encoderParamPath = "encoder_jit_trace-pnnx.ncnn.param";
-        static string encoderBinPath = "encoder_jit_trace-pnnx.ncnn.bin";
-        static string decoderParamPath = "decoder_jit_trace-pnnx.ncnn.param";
-        static string decoderBinPath = "decoder_jit_trace-pnnx.ncnn.bin";
-        static string joinerParamPath = "joiner_jit_trace-pnnx.ncnn.param";
-        static string joinerBinPath = "joiner_jit_trace-pnnx.ncnn.bin";
-        static int numThreads = 1;
-        static string decodingMethod = "greedy_search";
+        static string encoder = "encoder-epoch-99-avg-1.onnx";
+        static string decoder = "decoder-epoch-99-avg-1.onnx";
+        static string joiner = "joiner-epoch-99-avg-1.onnx";
+        static int numThreads = 2;
+        static string decodingMethod = "modified_beam_search";
 
         static string modelPath;
-        static float sampleRate = 16000;
+        static int sampleRate = 16000;
 
         static IWebSocketConnection client;
 
-        static SherpaOnnx.OfflinePunctuation offlinePunctuation = null;
-        static SherpaOnnx.VoiceActivityDetector vad = null;
+        static OfflinePunctuation offlinePunctuation = null;
+        static VoiceActivityDetector vad = null;
 
         static void Main(string[] args)
         {
             //需要将此文件夹拷贝到exe所在的目录
-            modelPath = Environment.CurrentDirectory + "/sherpa-ncnn-streaming-zipformer-small-bilingual-zh-en-2023-02-16";
+            modelPath = Environment.CurrentDirectory + "/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
             // 初始化配置
-            SherpaNcnn.OnlineRecognizerConfig config = new SherpaNcnn.OnlineRecognizerConfig
-            {
-                FeatConfig = { SampleRate = sampleRate, FeatureDim = 80 },
-                ModelConfig = {
-                Tokens = Path.Combine(modelPath,tokensPath),
-                EncoderParam =  Path.Combine(modelPath,encoderParamPath),
-                EncoderBin =Path.Combine(modelPath, encoderBinPath),
-                DecoderParam =Path.Combine(modelPath, decoderParamPath),
-                DecoderBin = Path.Combine(modelPath, decoderBinPath),
-                JoinerParam = Path.Combine(modelPath,joinerParamPath),
-                JoinerBin =Path.Combine(modelPath,joinerBinPath),
-                UseVulkanCompute = 0,
-                NumThreads = numThreads
-            },
-                DecoderConfig = {
-                DecodingMethod = decodingMethod,
-                NumActivePaths = 4
-            },
-                EnableEndpoint = 1,
-                Rule1MinTrailingSilence = 2.4F,
-                Rule2MinTrailingSilence = 1.2F,
-                Rule3MinUtteranceLength = 20.0F
-            };
+            OnlineRecognizerConfig config = new OnlineRecognizerConfig();
+            config.FeatConfig.SampleRate = sampleRate;
+            config.FeatConfig.FeatureDim = 80;
+            config.ModelConfig.Transducer.Encoder = Path.Combine(modelPath, encoder);
+            config.ModelConfig.Transducer.Decoder = Path.Combine(modelPath, decoder);
+            config.ModelConfig.Transducer.Joiner = Path.Combine(modelPath, joiner);
+            config.ModelConfig.Tokens = Path.Combine(modelPath, tokensPath);
+            config.ModelConfig.Debug = 0;
+            config.DecodingMethod = decodingMethod;
+            config.EnableEndpoint = 1;
 
             // 创建识别器和在线流
-            recognizer = new SherpaNcnn.OnlineRecognizer(config);
-
+            recognizer = new OnlineRecognizer(config);
             onlineStream = recognizer.CreateStream();
 
-            SherpaOnnx.SherpaOnnxOfflinePunctuationConfig soopc = new SherpaOnnx.SherpaOnnxOfflinePunctuationConfig();
-            SherpaOnnx.SherpaOnnxOfflinePunctuationModelConfig soopmc =
-                new SherpaOnnx.SherpaOnnxOfflinePunctuationModelConfig
-                (Environment.CurrentDirectory + "/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx", 1, false, "cpu");
-            soopc.model = soopmc;
-            offlinePunctuation = new SherpaOnnx.OfflinePunctuation(soopc);
+            #region 添加标点符号
+            OfflinePunctuationConfig opc = new OfflinePunctuationConfig();
 
+            OfflinePunctuationModelConfig opmc = new OfflinePunctuationModelConfig();
+            opmc.CtTransformer = Environment.CurrentDirectory + "/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx";
+            opmc.NumThreads = numThreads;
+            opmc.Provider = "cpu";
+            opmc.Debug = 0;
+
+            opc.Model = opmc;
+            offlinePunctuation = new OfflinePunctuation(opc);
+            #endregion
+
+            #region vad
             VadModelConfig vadModelConfig = new VadModelConfig();
-            vadModelConfig.SileroVad.Model = Environment.CurrentDirectory + "/silero_vad.onnx";
+            
+            SileroVadModelConfig SileroVad = new SileroVadModelConfig();
+            SileroVad.Model = Environment.CurrentDirectory + "/silero_vad.onnx";
+            SileroVad.MinSilenceDuration = 0.25f;
+            SileroVad.MinSpeechDuration = 0.5f;
+            SileroVad.Threshold = 0.5f;
+            SileroVad.WindowSize = 512;
+
+            vadModelConfig.SileroVad = SileroVad;
+            vadModelConfig.SampleRate = sampleRate;
+            vadModelConfig.NumThreads = numThreads;
+            vadModelConfig.Provider = "cpu";
             vadModelConfig.Debug = 0;
+
             vad = new VoiceActivityDetector(vadModelConfig, 60);
+            #endregion
 
             StartWebServer();
             Update();
@@ -119,15 +122,15 @@ namespace uSherpaServer
                     if (vad.IsSpeechDetected())
                     {
                         //Console.Write(" 有人讲话 ");
-
+                        
                         if (!vad.IsEmpty())
                         {
                             SpeechSegment segment = vad.Front();
                             float startTime = segment.Start / (float)sampleRate;
-                            float duration = segment.Samples.Length / (float)sampleRate;
-
+                            float duration = segment.Samples.Length / (float)sampleRate; 
                             //Console.Write(" " + startTime + "");
                             //Console.Write(" " + duration + "");
+
                             // 将采集到的音频数据传递给识别器
                             onlineStream.AcceptWaveform(sampleRate, floatArray);
                         }
@@ -191,7 +194,7 @@ namespace uSherpaServer
                             //client.Send(Encoding.UTF8.GetBytes("。"));
                             TextMsg textMsg = new TextMsg();
                             textMsg.isEndpoint = true;
-                            textMsg.message = offlinePunctuation.AddPunctuation(text.ToLower());
+                            textMsg.message = offlinePunctuation.AddPunct(text.ToLower());
                             client.Send(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(textMsg)));
                         }
                         //Console.WriteLine(offlinePunctuation.AddPunctuation(text));
